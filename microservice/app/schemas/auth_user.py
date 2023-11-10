@@ -14,3 +14,18 @@ class AuthUserRead(AuthUserBase):
 class AuthUserPatch(AuthUserBase):
     ...
 
+from pydantic import BaseModel
+
+class AuthCredentials(BaseModel):
+    email: str
+    password: str
+
+class MobileLoginCredentials(BaseModel):
+    phone: str
+
+class MobileLoginVerifyCredentials(BaseModel):
+    phone: str
+    otp:str
+
+
+

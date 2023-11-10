@@ -4,12 +4,16 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status,Form
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import EmailStr
+from fastapi.security import OAuth2PasswordBearer
 
 from app.api.dependencies.repositories import get_repository
 from app.db.errors import EntityDoesNotExist
 from app.db.repositories.auth_user import AuthUserRepository
-from app.schemas.auth_user import AuthUserCreate, AuthUserPatch, AuthUserRead
+from app.schemas.auth_user import AuthUserCreate, AuthUserPatch, AuthUserRead,AuthCredentials,MobileLoginCredentials,MobileLoginVerifyCredentials
+from app.db.security import get_current_user
 router = APIRouter()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 class CustomOAuth2PasswordRequestForm(OAuth2PasswordRequestForm):
@@ -28,6 +32,7 @@ async def create_auth_user(
 ) -> AuthUserRead:
     return await repository.create(auth_user_create=auth_user_create)
 
+# email login
 @router.post(
     "/login",
     response_model=dict,  # Adjust this to match your expected response model
@@ -36,26 +41,55 @@ async def create_auth_user(
     tags=["Authentication"]
 )
 async def login(
-    form_data: CustomOAuth2PasswordRequestForm = Depends(),  # You can use OAuth2PasswordBearer for a token-based approach
+    credentials: AuthCredentials = Body(...),  # You can use OAuth2PasswordBearer for a token-based approach
     repository: AuthUserRepository = Depends(get_repository(AuthUserRepository)),
 ) -> dict:
     try:
         # Attempt to log in with the provided credentials
-        login_result = await repository.login(form_data.username, form_data.password)
+        login_result = await repository.login(credentials.email, credentials.password)
     except HTTPException as e:
         raise e
     return login_result
-# @router.get(
-#     "/auth_user",
-#     response_model=list[Optional[AuthUserRead]],
-#     status_code=status.HTTP_200_OK,
-#     name="get_auth_users",
-# )
-# async def get_auth_user(
-#     limit: int = Query(default=10, lte=100),
-#     offset: int = Query(default=0),
-#     repository: AuthUserRepository = Depends(get_repository(AuthUserRepository)),
-# ) -> list[Optional[AuthUserRead]]:
-#     return await repository.list(limit=limit, offset=offset)
 
+# mobile login
+@router.post(
+    "/login/mobile",
+    response_model=dict,  # Adjust this to match your expected response model
+    status_code=status.HTTP_200_OK,
+    name="Mobile login",
+    tags=["Authentication"]
+)
+async def loginMobile(
+    credentials: MobileLoginCredentials = Body(...),  # You can use OAuth2PasswordBearer for a token-based approach
+    repository: AuthUserRepository = Depends(get_repository(AuthUserRepository)),
+) -> dict:
+    try:
+        # Attempt to log in with the provided credentials
+        login_result = await repository.mobile_login(credentials.phone)
+    except HTTPException as e:
+        raise e
+    return login_result
+
+# Verify mobile login
+@router.post(
+    "/login/mobile/verify",
+    response_model=dict,  # Adjust this to match your expected response model
+    status_code=status.HTTP_200_OK,
+    name="Verify Mobile login",
+    tags=["Authentication"]
+)
+async def verifyMobileLogin(
+    credentials: MobileLoginVerifyCredentials = Body(...),  # You can use OAuth2PasswordBearer for a token-based approach
+    repository: AuthUserRepository = Depends(get_repository(AuthUserRepository)),
+) -> dict:
+    try:
+        # Attempt to log in with the provided credentials
+        login_result = await repository.mobile_login_verify_otp(credentials.phone,credentials.otp)
+    except HTTPException as e:
+        raise e
+    return login_result
+
+@router.get("/user",tags=["Authentication"],name="get user",)
+async def get_private_data(current_user: dict = Depends(get_current_user)):
+    return {"message": "You have access to this private data", "user": current_user}
 
