@@ -11,7 +11,8 @@ class AuthUserBase(SQLModel):
     role: str = Field(nullable=False)
     email: str = Field(nullable=False, unique=True)
     password: str = Field(nullable=False)
-    otp: Optional[str] = Field(default=None)
+    otp: Optional[str] = Field(default=None,nullable=True)
+    reset_token: Optional[str] = Field(default=None,nullable=True)
 
 
 class AuthUser(AuthUserBase, UUIDModel, TimestampModel, table=True):

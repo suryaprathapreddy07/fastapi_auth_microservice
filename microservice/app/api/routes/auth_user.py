@@ -9,7 +9,7 @@ from fastapi.security import OAuth2PasswordBearer
 from app.api.dependencies.repositories import get_repository
 from app.db.errors import EntityDoesNotExist
 from app.db.repositories.auth_user import AuthUserRepository
-from app.schemas.auth_user import AuthUserCreate, AuthUserPatch, AuthUserRead,AuthCredentials,MobileLoginCredentials,MobileLoginVerifyCredentials
+from app.schemas.auth_user import AuthUserCreate, AuthUserPatch, AuthUserRead,AuthCredentials,MobileLoginCredentials,MobileLoginVerifyCredentials,ForgotPasswordCredentials, ResetPasswordCredentials
 from app.db.security import get_current_user
 router = APIRouter()
 
@@ -88,6 +88,44 @@ async def verifyMobileLogin(
     except HTTPException as e:
         raise e
     return login_result
+
+# forgot password
+@router.post(
+    "/forgotPassword",
+    response_model=dict,  # Adjust this to match your expected response model
+    status_code=status.HTTP_200_OK,
+    name="Send password reset link",
+    tags=["Authentication"]
+)
+async def forgotPassword(
+    credentials: ForgotPasswordCredentials = Body(...),  # You can use OAuth2PasswordBearer for a token-based approach
+    repository: AuthUserRepository = Depends(get_repository(AuthUserRepository)),
+) -> dict:
+    try:
+        # Attempt to log in with the provided credentials
+        res = await repository.forgot_password(credentials.email)
+    except HTTPException as e:
+        raise e
+    return res
+
+# reset password
+@router.post(
+    "/resetPassword",
+    response_model=dict,  # Adjust this to match your expected response model
+    status_code=status.HTTP_200_OK,
+    name="reset new password",
+    tags=["Authentication"]
+)
+async def resetPassword(
+    credentials: ResetPasswordCredentials = Body(...),  # You can use OAuth2PasswordBearer for a token-based approach
+    repository: AuthUserRepository = Depends(get_repository(AuthUserRepository)),
+) -> dict:
+    try:
+        # Attempt to log in with the provided credentials
+        res = await repository.reset_password(credentials.token,credentials.new_password)
+    except HTTPException as e:
+        raise e
+    return res
 
 @router.get("/user",tags=["Authentication"],name="get user",)
 async def get_private_data(current_user: dict = Depends(get_current_user)):

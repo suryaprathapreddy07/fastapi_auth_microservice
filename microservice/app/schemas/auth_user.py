@@ -27,5 +27,14 @@ class MobileLoginVerifyCredentials(BaseModel):
     phone: str
     otp:str
 
+class ForgotPasswordCredentials(BaseModel):
+    email: str
+
+class ResetPasswordCredentials(BaseModel):
+    token: str
+    new_password: str
+
+
+
 
 

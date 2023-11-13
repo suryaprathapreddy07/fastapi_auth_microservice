@@ -19,6 +19,9 @@ from app.db.tables.base_class import StatusEnum
 from app.db.tables.auth_user import AuthUser
 from app.schemas.auth_user import AuthUserCreate, AuthUserPatch, AuthUserRead
 from app.core.config import settings
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -172,6 +175,104 @@ class AuthUserRepository:
         except Exception as e:
             print(e)
             raise HTTPException(status_code=400, detail="Error during OTP verification")
+        
+
+     
+    # forgot password 
+    async def generate_reset_token(self, email: str) -> str:
+        try:
+            user = await self._find_user_by_email(email)
+            if user is None:
+                raise EntityDoesNotExist("User not found")
+
+            # Generate a reset token
+            reset_token = jwt.encode({"sub": user.email}, SECRET_KEY, algorithm=ALGORITHM)
+
+            # Save the reset token in the database
+            user.reset_token = reset_token.decode("utf-8") 
+            await self.session.commit()
+
+            return reset_token
+
+        except EntityDoesNotExist:
+            raise HTTPException(status_code=404, detail="User not found")
+        except Exception as e:
+            print(e)
+            raise HTTPException(status_code=500, detail="Error generating reset token")
+
+    async def send_password_reset_email(self, email: str, reset_token: str):
+        try:
+            # Replace these values with your actual email configuration
+            sender_email = "test@test.com"
+            sender_password = "testAppPassword"
+            app_domain = "your-app.com"
+
+            subject = "Password Reset"
+            body = f"Click on the link to reset your password: https://{app_domain}/reset-password?token={reset_token}"
+
+            msg = MIMEMultipart()
+            msg.attach(MIMEText(body, 'plain'))
+            msg['From'] = sender_email
+            msg['To'] = email
+            msg['Subject'] = subject
+
+            with smtplib.SMTP('smtp.gmail.com', 587) as server:
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.sendmail(sender_email, email, msg.as_string())
+
+            print(f"Password reset email sent to {email}")
+
+        except Exception as e:
+            print(f"Error sending password reset email to {email}: {e}")
+
+
+    async def forgot_password(self, email: str):
+        try:
+            # Generate reset token
+            reset_token = await self.generate_reset_token(email)
+
+            # Send the password reset link via email
+            await self.send_password_reset_email(email, reset_token)
+
+            return {"message": "Password reset link sent to your email"}
+
+        except EntityDoesNotExist:
+            raise HTTPException(status_code=404, detail="User not found")
+        except HTTPException as he:
+            raise he
+        except Exception as e:
+            print(e)
+            raise HTTPException(status_code=500, detail="Error initiating password reset")
+
+    async def reset_password(self, token: str, new_password: str):
+        try:
+            # Verify the reset token
+            email = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])["sub"]
+            user = await self._find_user_by_email(email)
+
+            if user is None:
+                raise EntityDoesNotExist("User not found")
+
+            # Update the user's password with the new password
+            hashed_password = self._hash_password(new_password)
+            user.password = hashed_password
+
+            # Remove the reset token
+            user.reset_token = None
+            await self.session.commit()
+
+            return {"message": "Password reset successfully"}
+
+        except EntityDoesNotExist:
+            raise HTTPException(status_code=404, detail="User not found")
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=400, detail="Reset token has expired")
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=400, detail="Invalid reset token")
+        except Exception as e:
+            print(e)
+            raise HTTPException(status_code=500, detail="Error resetting password")
 
     
 
