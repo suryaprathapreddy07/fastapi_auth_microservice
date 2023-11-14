@@ -31,6 +31,7 @@ SECRET_KEY = settings.jwt_secret_key
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+
 class AuthUserRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -59,7 +60,7 @@ class AuthUserRepository:
             await self.session.refresh(db_auth_user)
             return AuthUserRead(**db_auth_user.dict())
         except Exception as e:
-            raise HTTPException(status_code=400, detail="Error creating user")
+            raise e
 
     async def login(self, email: str, password: str):
         try:
@@ -70,12 +71,12 @@ class AuthUserRepository:
                     detail="Incorrect email or password",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-            userData={'name': db_auth_user.name,'email': db_auth_user.email,'address': db_auth_user.address,'phone': db_auth_user.phone,'role': db_auth_user.role}
+            userData = {'name': db_auth_user.name, 'email': db_auth_user.email,
+                        'address': db_auth_user.address, 'phone': db_auth_user.phone, 'role': db_auth_user.role}
             access_token = self._create_access_token(data={"data": userData})
             return {"access_token": access_token, "token_type": "bearer"}
         except Exception as e:
-            print(e)
-            raise HTTPException(status_code=400, detail="Error during login")
+            raise e
 
     async def _find_user_by_email(self, email: str):
         statement = (
@@ -101,13 +102,14 @@ class AuthUserRepository:
         statement = select(AuthUser).where(AuthUser.email == email)
         results = await self.session.exec(statement)
         return bool(results.first())
+
     def decode_jwt_token(token: str):
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             return payload
         except PyJWTError:
             raise HTTPException(status_code=401, detail="Invalid credentials")
-        
+
     # Mobile Authentication
     async def find_user_by_phone(self, phone: str):
         statement = (
@@ -117,46 +119,36 @@ class AuthUserRepository:
         )
         results = await self.session.exec(statement)
         return results.first()
-    
-    async def send_otp_to_user(self,phone: str, otp: str):
+
+    async def send_otp_to_user(self, phone: str, otp: str):
+        # replace with otp sending logic
         print('otp sent successfully')
         pass
 
     def _verify_otp(self, plain_otp, stored_hashed_otp):
-        
         hashed_otp = hashlib.sha256(plain_otp.encode()).hexdigest()
         return hashed_otp == stored_hashed_otp
-    
+
     async def mobile_login(self, phone: str):
         try:
-           
             db_auth_user = await self.find_user_by_phone(phone)
-            print(db_auth_user)
             if db_auth_user is None:
                 raise HTTPException(
                     status_code=404,
                     detail="User not found",
                 )
-
-            
             otp = str(random.randint(100000, 999999))
-
-            
             hashed_otp = hashlib.sha256(otp.encode()).hexdigest()
             db_auth_user.otp = hashed_otp
             await self.session.commit()
-
-            
-            self.send_otp_to_user(phone,otp)
-
+            self.send_otp_to_user(phone, otp)
             # Till sms service is implemented we can send otp here for testing
-            return {"message": "OTP sent successfully","otp":otp}
+            return {"message": "OTP sent successfully", "otp": otp}
         except Exception as e:
-            raise HTTPException(status_code=400, detail="Error during OTP request")
+            raise e
 
     async def mobile_login_verify_otp(self, phone: str, otp: str):
         try:
-            
             db_auth_user = await self.find_user_by_phone(phone)
             if db_auth_user is None or not self._verify_otp(otp, db_auth_user.otp):
                 raise HTTPException(
@@ -164,49 +156,38 @@ class AuthUserRepository:
                     detail="Incorrect phone number or OTP",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-
-           
             db_auth_user.otp = None
             await self.session.commit()
-
-            userData = {'name': db_auth_user.name, 'email': db_auth_user.email, 'address': db_auth_user.address, 'phone': db_auth_user.phone, 'role': db_auth_user.role}
+            userData = {'name': db_auth_user.name, 'email': db_auth_user.email,
+                        'address': db_auth_user.address, 'phone': db_auth_user.phone, 'role': db_auth_user.role}
             access_token = self._create_access_token(data={"data": userData})
             return {"access_token": access_token, "token_type": "bearer"}
         except Exception as e:
             print(e)
-            raise HTTPException(status_code=400, detail="Error during OTP verification")
-        
+            raise e
 
-     
-    # forgot password 
+    # forgot password
     async def generate_reset_token(self, email: str) -> str:
         try:
             user = await self._find_user_by_email(email)
             if user is None:
                 raise EntityDoesNotExist("User not found")
-
-            # Generate a reset token
-            reset_token = jwt.encode({"sub": user.email}, SECRET_KEY, algorithm=ALGORITHM)
-
-            # Save the reset token in the database
-            user.reset_token = reset_token.decode("utf-8") 
+            reset_token = jwt.encode(
+                {"sub": user.email}, SECRET_KEY, algorithm=ALGORITHM)
+            user.reset_token = reset_token.decode("utf-8")
             await self.session.commit()
-
             return reset_token
-
         except EntityDoesNotExist:
             raise HTTPException(status_code=404, detail="User not found")
         except Exception as e:
-            print(e)
-            raise HTTPException(status_code=500, detail="Error generating reset token")
+            raise e
 
     async def send_password_reset_email(self, email: str, reset_token: str):
         try:
-            # Replace these values with your actual email configuration
+            # replace the values with actual email configuration
             sender_email = "test@test.com"
             sender_password = "testAppPassword"
             app_domain = "your-app.com"
-
             subject = "Password Reset"
             body = f"Click on the link to reset your password: https://{app_domain}/reset-password?token={reset_token}"
 
@@ -226,15 +207,10 @@ class AuthUserRepository:
         except Exception as e:
             print(f"Error sending password reset email to {email}: {e}")
 
-
     async def forgot_password(self, email: str):
         try:
-            # Generate reset token
             reset_token = await self.generate_reset_token(email)
-
-            # Send the password reset link via email
             await self.send_password_reset_email(email, reset_token)
-
             return {"message": "Password reset link sent to your email"}
 
         except EntityDoesNotExist:
@@ -242,23 +218,19 @@ class AuthUserRepository:
         except HTTPException as he:
             raise he
         except Exception as e:
-            print(e)
-            raise HTTPException(status_code=500, detail="Error initiating password reset")
+            raise e
 
     async def reset_password(self, token: str, new_password: str):
         try:
-            # Verify the reset token
-            email = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])["sub"]
+            email = jwt.decode(token, SECRET_KEY,
+                               algorithms=[ALGORITHM])["sub"]
             user = await self._find_user_by_email(email)
 
             if user is None:
                 raise EntityDoesNotExist("User not found")
 
-            # Update the user's password with the new password
             hashed_password = self._hash_password(new_password)
             user.password = hashed_password
-
-            # Remove the reset token
             user.reset_token = None
             await self.session.commit()
 
@@ -267,13 +239,9 @@ class AuthUserRepository:
         except EntityDoesNotExist:
             raise HTTPException(status_code=404, detail="User not found")
         except jwt.ExpiredSignatureError:
-            raise HTTPException(status_code=400, detail="Reset token has expired")
+            raise HTTPException(
+                status_code=400, detail="Reset token has expired")
         except jwt.InvalidTokenError:
             raise HTTPException(status_code=400, detail="Invalid reset token")
         except Exception as e:
-            print(e)
-            raise HTTPException(status_code=500, detail="Error resetting password")
-
-    
-
-
+            raise e
